@@ -261,6 +261,7 @@ body{background:var(--cream);color:var(--ink);font-family:'DM Sans',sans-serif;f
       <button class="btn btn-sage" onclick="saveAll()">💾 儲存所有資料</button>
       <button class="btn btn-gold" onclick="exportData()">📤 匯出備份</button>
       <button class="btn btn-out" onclick="importData()" style="font-size:12px">📥 匯入資料</button>
+      <button class="btn btn-out" onclick="clearToken()" style="font-size:12px">🔑 重設密碼</button>
       <button class="btn btn-out" onclick="takeSnap()">📷 存快照備份</button>
     </div>
   </div>
@@ -459,6 +460,8 @@ body{background:var(--cream);color:var(--ink);font-family:'DM Sans',sans-serif;f
 <script>
 
 const KEY='wedding_v9',GKEY='wedding_guests_v4',HKEY='wedding_history_v1';
+var GS_URL='https://script.google.com/macros/s/AKfycbysUs2DHFyCuftaiyMY7kCytn8vqp4LafsIZcFhWc1fVezW6oWsFprU3z4HTAytjfcI/exec';
+var GS_TOKEN=localStorage.getItem('wedding_gs_token')||'';
 
 // ── DEFAULT DATA ──────────────────────────────────────────────────────
 const V_DEF=[
@@ -1775,7 +1778,22 @@ function _showSyncStatus(msg,color){
 }
 
 function cloudSave(){_localSave();}
-function cloudLoad(callback){callback(null);}
+function cloudLoad(callback){
+  var token=localStorage.getItem('wedding_gs_token');
+  if(!token){callback(null);return;}
+  GS_TOKEN=token;
+  fetch(GS_URL+'?action=load&token='+token)
+  .then(function(r){return r.json();})
+  .then(function(r){
+    if(r&&r.ok&&r.data){
+      try{var parsed=JSON.parse(r.data);callback(parsed);return;}
+      catch(e){console.error('GS parse:',e);}
+    }
+    if(r&&r.error==='unauthorized'){localStorage.removeItem('wedding_gs_token');GS_TOKEN='';}
+    callback(null);
+  })
+  .catch(function(e){console.error('GS load:',e);callback(null);});
+}
 
 function applyCloudData(d){
   if(!d||(d.v!==2&&d.v!==3))return false;
@@ -1835,7 +1853,7 @@ function importData(){
         var d=JSON.parse(ev.target.result);
         if(applyCloudData(d)){
           _initRender();
-          _showSyncStatus('✓ 資料載入成功！','#1d9e75');
+          _showSyncStatus('✓ 資料載入成功！請按「儲存所有資料」同步至 Google Sheets','#1d9e75');
         } else {
           _showSyncStatus('⚠ 檔案格式不正確','var(--rose)');
         }
@@ -1850,9 +1868,52 @@ function importData(){
   document.body.removeChild(inp);
 }
 
+function checkToken(callback){
+  var token=localStorage.getItem('wedding_gs_token');
+  if(token){GS_TOKEN=token;callback(token);return;}
+  var m=document.createElement('div');m.className='modal-bg';m.id='pw-modal';
+  var box=document.createElement('div');box.className='modal-box';box.style.maxWidth='360px';
+  box.innerHTML='<p class="modal-title">🔐 請輸入存取密碼</p>'
+    +'<p style="font-size:13px;color:var(--ink2);margin-bottom:1rem">輸入後自動記住，不用每次輸入。</p>'
+    +'<input id="pw-inp" class="modal-inp" type="password" placeholder="輸入密碼">';
+  var ft=document.createElement('div');ft.className='modal-ft';
+  var bs=document.createElement('button');bs.className='btn btn-gold';bs.textContent='確認';
+  bs.onclick=function(){
+    var pw=(document.getElementById('pw-inp')||{value:''}).value.trim();
+    if(!pw)return;
+    localStorage.setItem('wedding_gs_token',pw);
+    GS_TOKEN=pw;m.remove();callback(pw);
+  };
+  ft.appendChild(bs);box.appendChild(ft);m.appendChild(box);
+  document.body.appendChild(m);
+  setTimeout(function(){
+    var i=document.getElementById('pw-inp');
+    if(i){i.focus();i.addEventListener('keydown',function(e){if(e.key==='Enter')bs.click();});}
+  },50);
+}
+function clearToken(){
+  localStorage.removeItem('wedding_gs_token');GS_TOKEN='';
+  _showSyncStatus('密碼已清除，下次操作需重新輸入','var(--gold)');
+}
 function saveAll(){
   _localSave();
-  _showSyncStatus('✓ 已儲存至本機！按「匯出備份」可存到 Google Drive','#1d9e75');
+  _showSyncStatus('正在儲存...','var(--ink3)');
+  checkToken(function(token){
+    var body=JSON.stringify({action:'save',token:token,data:gatherAllData()});
+    fetch(GS_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:body})
+    .then(function(r){return r.json();})
+    .then(function(r){
+      if(r&&r.ok){
+        _showSyncStatus('✓ 已儲存至 Google Sheets ('+new Date().toLocaleTimeString('zh-TW')+')','#1d9e75');
+      } else if(r&&r.error==='unauthorized'){
+        localStorage.removeItem('wedding_gs_token');GS_TOKEN='';
+        _showSyncStatus('⚠ 密碼錯誤','var(--rose)');
+      } else {
+        _showSyncStatus('⚠ 儲存失敗：'+(r&&r.error||'未知'),'var(--rose)');
+      }
+    })
+    .catch(function(){_showSyncStatus('⚠ 網路錯誤，已存本機','var(--gold)');});
+  });
 }
 
 function testGS(){
@@ -2098,6 +2159,18 @@ function _initRender(){
   renderHome();
 }
 _initRender();
+// Auto-load from Google Sheets if token exists
+(function(){
+  var token=localStorage.getItem('wedding_gs_token');
+  if(!token)return;
+  _showSyncStatus('正在從 Google Sheets 載入...','var(--ink3)');
+  cloudLoad(function(cloudData){
+    if(cloudData&&applyCloudData(cloudData)){
+      _initRender();
+      _showSyncStatus('✓ 已從 Google Sheets 載入最新資料','#1d9e75');
+    }
+  });
+})();
 
 
 // ── SAVE ALL ──────────────────────────────────────────────────────────
