@@ -2174,11 +2174,7 @@ _initRender();
 
 
 // ── SAVE ALL ──────────────────────────────────────────────────────────
-function saveAll(){
-  save();saveG();saveCalEvents();saveGanttData();saveSavedDays();saveIdeas();saveBudget();
-  var msg=document.getElementById('home-saved-msg');
-  if(msg){msg.textContent='✓ 所有資料已儲存！';msg.style.opacity='1';setTimeout(function(){msg.style.opacity='0';},3000);}
-}
+// saveAll defined above
 
 // ── IDEAS ─────────────────────────────────────────────────────────────
 var IDEAS_KEY='wedding_ideas_v1';
