@@ -1746,7 +1746,23 @@ function compressData(obj){
 }
 
 function gatherAllData(){
-  return JSON.stringify(compressData({
+  // Deep compress - remove all empty/default values
+  function deepCompress(obj){
+    if(Array.isArray(obj))return obj.map(deepCompress).filter(function(x){return x!==null&&x!==undefined;});
+    if(obj&&typeof obj==='object'){
+      var out={};
+      Object.keys(obj).forEach(function(k){
+        var v=obj[k];
+        if(v===null||v===undefined||v===''||v===false)return;
+        if(Array.isArray(v)&&v.length===0)return;
+        if(typeof v==='number'&&v===0&&k==='stars')return;
+        out[k]=deepCompress(v);
+      });
+      return out;
+    }
+    return obj;
+  }
+  return JSON.stringify(deepCompress({
     v:3,d:data,g:gd,h:snapHistory,cal:calEvents,
     gantt:ganttData,lucky:savedDays,ideas:ideas,
     budget:budgetData,todos:todosData,notes:homeNotes
