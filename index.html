@@ -1524,7 +1524,7 @@ function loadBudget(){
   try{var d=JSON.parse(localStorage.getItem(BUDGET_KEY));if(d&&d.items)return d;}catch(e){}
   return{
     items:[
-      {id:'b_init1',cat:'婚紗&拍攝',name:'The Dress Room 婚紗拍攝',vendor:'The Dress Room',amount:88000,method:'信用卡',paidBy:'Shelly',bornBy:'共同',date:'2026-05-01',note:'已付訂金',paid:true}
+      {id:'b_init1',cat:'婚紗&拍攝',name:'The Dress Room 婚紗拍攝',vendor:'The Dress Room',amount:88000,method:'信用卡',paidBy:'Shelly',bornBy:'共同',date:'2026-05-01',note:'已付訂金',paid:true,estimated:false}
     ],
     budget:{},
     note:''
@@ -1536,123 +1536,233 @@ function saveBudget(){try{localStorage.setItem(BUDGET_KEY,JSON.stringify(budgetD
 function renderBudget(){
   var el=document.getElementById('budget-content');if(!el)return;
   var items=budgetData.items||[];
-
-  // Calculate totals
-  var total=0,byPayer={Shelly:0,Bill:0,'共同':0};
-  var byCat={};
-  var bornByCat={Shelly:0,Bill:0,'共同':0};
-  items.forEach(function(item){
-    var amt=item.amount||0;
-    total+=amt;
-    if(!byCat[item.cat])byCat[item.cat]=0;
-    byCat[item.cat]+=amt;
-    if(byPayer[item.paidBy]!==undefined)byPayer[item.paidBy]+=amt;
-    else byPayer['其他']=(byPayer['其他']||0)+amt;
-    if(bornByCat[item.bornBy]!==undefined)bornByCat[item.bornBy]+=amt;
-  });
-
-  // Settlement: split 共同 50/50 between Shelly and Bill
-  var shellyPaid=byPayer['Shelly']+(byPayer['共同']||0)/2;
-  var billPaid=byPayer['Bill']+(byPayer['共同']||0)/2;
-  var shellyBorne=bornByCat['Shelly']+(bornByCat['共同']||0)/2;
-  var billBorne=bornByCat['Bill']+(bornByCat['共同']||0)/2;
-  // Who owes whom: if you paid more than you owe, the other owes you
-  var shellyNet=shellyPaid-shellyBorne; // positive = Bill owes Shelly
-  var settlementText='';
-  if(Math.abs(shellyNet)<1){settlementText='目前持平，無需結算';}
-  else if(shellyNet>0){settlementText='Bill 需給 Shelly NT$'+Math.round(shellyNet).toLocaleString();}
-  else{settlementText='Shelly 需給 Bill NT$'+Math.round(-shellyNet).toLocaleString();}
+  var estimated=items.filter(function(x){return x.estimated;});
+  var actual=items.filter(function(x){return !x.estimated;});
 
   var fmt=function(n){return'NT$'+(Math.round(n)||0).toLocaleString();};
+  var CHART_COLORS={'婚宴場地':'#1d9e75','婚紗&拍攝':'#b8963e','婚顧':'#6355A4','靜態攝影':'#3A5FA0','動態攝影':'#C4756A','新娘秘書':'#7B6FAB','場地佈置':'#5C8A5C','婚戒':'#A23B72','服裝造型':'#2E86AB','喜帖&文具':'#B05030','蜜月':'#1d9e75','交通':'#888','其他':'#888'};
+
+  // Totals
+  var totalActual=actual.reduce(function(s,x){return s+(x.amount||0);},0);
+  var totalEstimated=estimated.reduce(function(s,x){return s+(x.amount||0);},0);
+  var totalAll=totalActual+totalEstimated;
+
+  var byPayerActual={Shelly:0,Bill:0,'共同':0};
+  var bornActual={Shelly:0,Bill:0,'共同':0};
+  actual.forEach(function(item){
+    var amt=item.amount||0;
+    if(byPayerActual[item.paidBy]!==undefined)byPayerActual[item.paidBy]+=amt;
+    if(bornActual[item.bornBy]!==undefined)bornActual[item.bornBy]+=amt;
+  });
+  var shellyPaid=byPayerActual['Shelly']+(byPayerActual['共同']||0)/2;
+  var billPaid=byPayerActual['Bill']+(byPayerActual['共同']||0)/2;
+  var shellyBorne=bornActual['Shelly']+(bornActual['共同']||0)/2;
+  var billBorne=bornActual['Bill']+(bornActual['共同']||0)/2;
+  var shellyNet=shellyPaid-shellyBorne;
+  var settlementText=Math.abs(shellyNet)<1?'目前持平':shellyNet>0?'Bill 需給 Shelly '+fmt(shellyNet):'Shelly 需給 Bill '+fmt(-shellyNet);
+
+  var html='';
 
   // ── Dashboard ──
-  var html='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:1.5rem">';
-  html+='<div class="metric" style="grid-column:span 2;border-left:3px solid var(--gold)"><div class="mv" style="font-size:28px">'+fmt(total)+'</div><div class="ml">總花費（已記錄）</div></div>';
-  html+='<div class="metric"><div class="mv" style="font-size:18px;color:#3A5FA0">'+fmt(byPayer['Bill']||0)+'</div><div class="ml">Bill 已付</div></div>';
-  html+='<div class="metric"><div class="mv" style="font-size:18px;color:var(--rose)">'+fmt(byPayer['Shelly']||0)+'</div><div class="ml">Shelly 已付</div></div>';
-  html+='<div class="metric" style="border:.5px solid var(--gold)"><div class="mv" style="font-size:14px;color:var(--gold)">'+settlementText+'</div><div class="ml">結算</div></div>';
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:1.5rem">';
+  html+='<div class="metric" style="border-left:3px solid var(--gold)"><div class="mv" style="font-size:22px">'+fmt(totalAll)+'</div><div class="ml">總計（實際+預估）</div></div>';
+  html+='<div class="metric" style="border-left:3px solid #1d9e75"><div class="mv" style="font-size:22px;color:#1d9e75">'+fmt(totalActual)+'</div><div class="ml">已確認花費</div></div>';
+  html+='<div class="metric" style="border-left:3px solid var(--ink3)"><div class="mv" style="font-size:22px;color:var(--ink3)">'+fmt(totalEstimated)+'</div><div class="ml">預估花費</div></div>';
+  html+='<div class="metric"><div class="mv" style="font-size:18px;color:#3A5FA0">'+fmt(byPayerActual['Bill']||0)+'</div><div class="ml">Bill 已付</div></div>';
+  html+='<div class="metric"><div class="mv" style="font-size:18px;color:var(--rose)">'+fmt(byPayerActual['Shelly']||0)+'</div><div class="ml">Shelly 已付</div></div>';
+  html+='<div class="metric" style="border:.5px solid var(--gold)"><div class="mv" style="font-size:13px;color:var(--gold)">'+settlementText+'</div><div class="ml">結算（已確認）</div></div>';
   html+='</div>';
 
-  // By category
-  html+='<div style="margin-bottom:1.5rem"><div style="font-family:Cormorant Garamond,serif;font-size:17px;font-weight:400;margin-bottom:.75rem">各類別花費</div>';
-  html+='<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px">';
-  var budgetCatColors={'婚宴場地':'#1d9e75','婚紗&拍攝':'#b8963e','婚顧':'#6355A4','靜態攝影':'#3A5FA0','動態攝影':'#C4756A','新娘秘書':'#7B6FAB','場地佈置':'#5C8A5C','婚戒':'#A23B72','服裝造型':'#2E86AB','喜帖&文具':'#B05030','蜜月':'#1d9e75','交通':'#888','其他':'#888'};
-  BUDGET_CATS.forEach(function(cat){
-    var amt=byCat[cat]||0;
-    if(amt===0)return;
-    var budget=budgetData.budget&&budgetData.budget[cat]||0;
-    var pct=budget>0?Math.min(100,Math.round(amt/budget*100)):0;
-    var col=budgetCatColors[cat]||'#888';
-    html+='<div style="background:var(--warm);border:.5px solid var(--bd);border-radius:var(--r);padding:.75rem 1rem">';
-    html+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">';
-    html+='<span style="font-size:12.5px;font-weight:500">'+cat+'</span>';
-    html+='<span style="font-size:13px;font-weight:600;color:'+col+'">'+fmt(amt)+'</span>';
-    html+='</div>';
-    if(budget>0){
-      html+='<div style="height:4px;background:#e8e4dc;border-radius:2px;overflow:hidden"><div style="height:100%;width:'+pct+'%;background:'+col+';border-radius:2px;transition:width .3s"></div></div>';
-      html+='<div style="font-size:10.5px;color:var(--ink3);margin-top:2px">預算 '+fmt(budget)+' / '+pct+'%</div>';
-    }
-    html+='</div>';
-  });
+  // ── Bar Chart ──
+  html+='<div style="background:var(--warm);border:.5px solid var(--bd);border-radius:var(--rl);padding:1.25rem;margin-bottom:1.5rem">';
+  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:8px">';
+  html+='<div style="font-family:Cormorant Garamond,serif;font-size:17px">各類別花費</div>';
+  html+='<div style="display:flex;gap:6px;flex-wrap:wrap" id="chart-filter-btns">';
+  [{f:'all',l:'全部'},{f:'actual',l:'已確認'},{f:'estimated',l:'預估'}].forEach(function(o){html+='<button class="chip'+(o.f==='all'?' on':'')+' id="chart-filter-'+o.f+'" data-f="'+o.f+'" onclick="setChartFilter(this)">'+o.l+'</button>';});
   html+='</div></div>';
+  html+='<div id="budget-chart-wrap"></div></div>';
 
-  // Settlement detail
+  // ── Settlement ──
   html+='<div style="background:var(--warm);border:.5px solid var(--bd);border-radius:var(--rl);padding:1rem 1.25rem;margin-bottom:1.5rem">';
-  html+='<div style="font-family:Cormorant Garamond,serif;font-size:17px;margin-bottom:.875rem">付款 vs 負擔明細</div>';
+  html+='<div style="font-family:Cormorant Garamond,serif;font-size:17px;margin-bottom:.875rem">付款 vs 負擔明細（已確認）</div>';
   html+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">';
   ['Shelly','Bill'].forEach(function(person){
-    var paid=(byPayer[person]||0)+(byPayer['共同']||0)/2;
-    var borne=(bornByCat[person]||0)+(bornByCat['共同']||0)/2;
+    var paid=(byPayerActual[person]||0)+(byPayerActual['共同']||0)/2;
+    var borne=(bornActual[person]||0)+(bornActual['共同']||0)/2;
     var net=paid-borne;
     html+='<div><div style="font-size:14px;font-weight:500;margin-bottom:6px">'+person+'</div>';
     html+='<div style="font-size:12.5px;color:var(--ink2);margin-bottom:3px">實際付款：<b>'+fmt(paid)+'</b></div>';
     html+='<div style="font-size:12.5px;color:var(--ink2);margin-bottom:3px">應負擔：<b>'+fmt(borne)+'</b></div>';
     html+='<div style="font-size:12.5px;color:'+(net>0?'#1d9e75':net<0?'var(--rose)':'var(--ink2)')+'">'+
-      (net>0?'對方欠你 '+fmt(net):net<0?'你欠對方 '+fmt(-net):'持平')+'</div>';
-    html+='</div>';
+      (net>0?'對方欠你 '+fmt(net):net<0?'你欠對方 '+fmt(-net):'持平')+'</div></div>';
   });
   html+='</div></div>';
 
-  // Expense list
-  html+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">';
-  html+='<div style="font-family:Cormorant Garamond,serif;font-size:17px">費用明細</div>';
+  // ── Expense List with toggle ──
+  html+='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:.75rem;align-items:center">';
+  html+='<div style="font-family:Cormorant Garamond,serif;font-size:17px;flex:1">費用明細</div>';
+  [{f:'all',l:'全部'},{f:'actual',l:'已確認'},{f:'estimated',l:'預估'}].forEach(function(o){
+    html+='<button class="chip'+(o.f==="all"?' on':'')+' id="exp-tab-'+o.f+'" data-f="'+o.f+'" onclick="setExpTab(this)">'+o.l+'</button>';
+  });
   html+='<button class="btn btn-gold" onclick="addExpense()">＋ 新增費用</button>';
   html+='</div>';
-
-  if(!items.length){
-    html+='<p class="empty">尚未記錄任何費用</p>';
-  } else {
-    // Sort by date desc
-    var sorted=[].concat(items).sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
-    html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">';
-    html+='<thead><tr style="background:var(--warm);border-bottom:.5px solid var(--bd2)">';
-    ['日期','項目','類別','店家','付款方式','金額','付款人','負擔人','備注',''].forEach(function(h2){
-      html+='<th style="padding:8px 10px;text-align:left;font-size:11px;font-weight:500;color:var(--ink3);white-space:nowrap">'+h2+'</th>';
-    });
-    html+='</tr>';
-    sorted.forEach(function(item){
-      var col=budgetCatColors[item.cat]||'#888';
-      html+='<tr style="border-bottom:.5px solid var(--bd)" onmouseover="this.style.background=\'var(--cream)\'" onmouseout="this.style.background=\'\'">';
-      html+='<td style="padding:8px 10px;color:var(--ink3);white-space:nowrap">'+(item.date||'-')+'</td>';
-      html+='<td style="padding:8px 10px;font-weight:500">'+item.name+'</td>';
-      html+='<td style="padding:8px 10px"><span style="font-size:11px;padding:2px 7px;border-radius:8px;background:'+col+'22;color:'+col+'">'+item.cat+'</span></td>';
-      html+='<td style="padding:8px 10px;color:var(--ink2)">'+(item.vendor||'-')+'</td>';
-      html+='<td style="padding:8px 10px;color:var(--ink2)">'+(item.method||'-')+'</td>';
-      html+='<td style="padding:8px 10px;font-weight:600;color:var(--gold);white-space:nowrap">'+fmt(item.amount)+'</td>';
-      html+='<td style="padding:8px 10px"><span style="color:'+(item.paidBy==='Bill'?'#3A5FA0':item.paidBy==='Shelly'?'var(--rose)':'var(--ink2)')+'">'+item.paidBy+'</span></td>';
-      html+='<td style="padding:8px 10px"><span style="color:'+(item.bornBy==='Bill'?'#3A5FA0':item.bornBy==='Shelly'?'var(--rose)':'var(--ink2)')+'">'+item.bornBy+'</span></td>';
-      html+='<td style="padding:8px 10px;color:var(--ink3);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(item.note||'-')+'</td>';
-      html+='<td style="padding:8px 10px;white-space:nowrap">'
-        +'<button class="btn btn-out" style="font-size:11px;padding:2px 7px" onclick="editExpense(\''+item.id+'\')">編輯</button> '
-        +'<button class="gd" onclick="delExpense(\''+item.id+'\')">✕</button>'
-        +'</td>';
-      html+='</tr>';
-    });
-    html+='</table></div>';
-  }
+  html+='<div id="expense-table-wrap"></div>';
 
   el.innerHTML=html;
+  renderExpenseChart('all');
+  renderExpenseTable('all');
 }
+
+var _chartFilter='all';
+var _expTab='all';
+
+function setChartFilter(f){
+  if(f&&typeof f==='object'&&f.dataset)f=f.dataset.f;
+  _chartFilter=f;
+  document.querySelectorAll('#chart-filter-btns .chip').forEach(function(b){b.classList.remove('on');});
+  var btn=document.getElementById('chart-filter-'+f);if(btn)btn.classList.add('on');
+  renderExpenseChart(f);
+}
+
+function setExpTab(f){
+  if(f&&typeof f==='object'&&f.dataset)f=f.dataset.f;
+  _expTab=f;
+  document.querySelectorAll('#exp-tab-all,#exp-tab-actual,#exp-tab-estimated').forEach(function(b){b.classList.remove('on');});
+  var btn=document.getElementById('exp-tab-'+f);if(btn)btn.classList.add('on');
+  renderExpenseTable(f);
+}
+
+function renderExpenseChart(filter){
+  var el=document.getElementById('budget-chart-wrap');if(!el)return;
+  var items=(budgetData.items||[]).filter(function(x){
+    if(filter==='actual')return !x.estimated;
+    if(filter==='estimated')return x.estimated;
+    return true;
+  });
+  var CHART_COLORS={'婚宴場地':'#1d9e75','婚紗&拍攝':'#b8963e','婚顧':'#6355A4','靜態攝影':'#3A5FA0','動態攝影':'#C4756A','新娘秘書':'#7B6FAB','場地佈置':'#5C8A5C','婚戒':'#A23B72','服裝造型':'#2E86AB','喜帖&文具':'#B05030','蜜月':'#1d9e75','交通':'#888','其他':'#888'};
+  var byCat={};
+  items.forEach(function(item){
+    if(!byCat[item.cat])byCat[item.cat]=0;
+    byCat[item.cat]+=(item.amount||0);
+  });
+  var sorted=Object.entries(byCat).sort(function(a,b){return b[1]-a[1];});
+  if(!sorted.length){el.innerHTML='<p style="font-size:13px;color:var(--ink3);text-align:center;padding:1rem">無資料</p>';return;}
+  var max=sorted[0][1];
+  var fmt=function(n){return'NT$'+(Math.round(n)||0).toLocaleString();};
+  var html='';
+  sorted.forEach(function(e){
+    var cat=e[0],amt=e[1];
+    var col=CHART_COLORS[cat]||'#888';
+    var pct=max>0?Math.round(amt/max*100):0;
+    html+='<div style="display:grid;grid-template-columns:100px 1fr 120px;gap:8px;align-items:center;margin-bottom:8px">';
+    html+='<div style="font-size:12px;color:var(--ink2);text-align:right">'+cat+'</div>';
+    html+='<div style="height:24px;background:#f0ede8;border-radius:4px;overflow:hidden">';
+    html+='<div style="height:100%;width:'+pct+'%;background:'+col+';border-radius:4px;transition:width .4s;display:flex;align-items:center;padding:0 6px">';
+    if(pct>20)html+='<span style="font-size:10px;color:#fff;font-weight:500;white-space:nowrap">'+pct+'%</span>';
+    html+='</div></div>';
+    html+='<div style="font-size:12.5px;font-weight:600;color:'+col+'">'+fmt(amt)+'</div>';
+    html+='</div>';
+  });
+  el.innerHTML=html;
+}
+
+function renderExpenseTable(filter){
+  var el=document.getElementById('expense-table-wrap');if(!el)return;
+  var items=(budgetData.items||[]).filter(function(x){
+    if(filter==='actual')return !x.estimated;
+    if(filter==='estimated')return x.estimated;
+    return true;
+  });
+  var CC={'婚宴場地':'#1d9e75','婚紗&拍攝':'#b8963e','婚顧':'#6355A4','靜態攝影':'#3A5FA0','動態攝影':'#C4756A','新娘秘書':'#7B6FAB','場地佈置':'#5C8A5C','婚戒':'#A23B72','服裝造型':'#2E86AB','喜帖&文具':'#B05030','蜜月':'#1d9e75','交通':'#888','其他':'#888'};
+  var fmt=function(n){return'NT$'+(Math.round(n)||0).toLocaleString();};
+  if(!items.length){el.innerHTML='<p class="empty">無費用記錄</p>';return;}
+  var sorted=[].concat(items).sort(function(a,b){return(b.date||'').localeCompare(a.date||'');});
+
+  var tbl=document.createElement('div');
+  tbl.style.cssText='overflow-x:auto';
+  var table=document.createElement('table');
+  table.style.cssText='width:100%;border-collapse:collapse;font-size:13px';
+
+  // Header
+  var thead=document.createElement('thead');
+  var htr=document.createElement('tr');
+  htr.style.cssText='background:var(--warm);border-bottom:.5px solid var(--bd2)';
+  ['','日期','項目','類別','金額','付款人','負擔人','備注',''].forEach(function(h2){
+    var th=document.createElement('th');
+    th.style.cssText='padding:7px 8px;text-align:left;font-size:11px;font-weight:500;color:var(--ink3);white-space:nowrap';
+    th.textContent=h2;
+    htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+  table.appendChild(thead);
+
+  var tbody=document.createElement('tbody');
+  sorted.forEach(function(item){
+    var col=CC[item.cat]||'#888';
+    var isEst=!!item.estimated;
+    var tr=document.createElement('tr');
+    tr.style.cssText='border-bottom:.5px solid var(--bd);'+(isEst?'opacity:.8;background:var(--gold3)':'');
+
+    // Estimated toggle cell
+    var tdEst=document.createElement('td');
+    tdEst.style.cssText='padding:7px 8px';
+    var estBtn=document.createElement('div');
+    estBtn.style.cssText='width:18px;height:18px;border-radius:4px;border:1.5px solid '+(isEst?'var(--ink3)':'#1d9e75')+';background:'+(isEst?'none':'#1d9e75')+';display:flex;align-items:center;justify-content:center;cursor:pointer';
+    estBtn.title=isEst?'標記為已確認':'標記為預估';
+    estBtn.innerHTML=isEst?'<span style="font-size:9px;color:var(--ink3)">估</span>':'<span style="color:#fff;font-size:10px">✓</span>';
+    estBtn.onclick=(function(id){return function(){toggleEstimated(id);};})(item.id);
+    tdEst.appendChild(estBtn);
+    tr.appendChild(tdEst);
+
+    // Other cells
+    var cells=[
+      item.date||'-',
+      (isEst?'[預估] ':'')+item.name,
+      null, // cat badge - special
+      fmt(item.amount),
+      item.paidBy,
+      item.bornBy,
+      item.note||'-',
+      null  // actions - special
+    ];
+    cells.forEach(function(txt,ci){
+      var td=document.createElement('td');
+      td.style.cssText='padding:7px 8px';
+      if(ci===1){td.style.fontWeight='500';}
+      if(ci===2){
+        var span=document.createElement('span');
+        span.style.cssText='font-size:11px;padding:2px 7px;border-radius:8px;background:'+col+'22;color:'+col;
+        span.textContent=item.cat;
+        td.appendChild(span);
+      } else if(ci===7){
+        var eb=document.createElement('button');eb.className='btn btn-out';eb.style.cssText='font-size:11px;padding:2px 7px;margin-right:4px';eb.textContent='編輯';
+        eb.onclick=(function(id){return function(){editExpense(id);};})(item.id);
+        var db=document.createElement('button');db.className='gd';db.textContent='✕';
+        db.onclick=(function(id){return function(){delExpense(id);};})(item.id);
+        td.appendChild(eb);td.appendChild(db);
+        td.style.whiteSpace='nowrap';
+      } else {
+        if(ci===3){td.style.cssText='padding:7px 8px;font-weight:600;color:'+(isEst?'var(--ink3)':'var(--gold)');}
+        if(ci===4){td.style.color=item.paidBy==='Bill'?'#3A5FA0':item.paidBy==='Shelly'?'var(--rose)':'var(--ink2)';}
+        if(ci===5){td.style.color=item.bornBy==='Bill'?'#3A5FA0':item.bornBy==='Shelly'?'var(--rose)':'var(--ink2)';}
+        if(ci===6){td.style.cssText='padding:7px 8px;color:var(--ink3);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';}
+        td.textContent=txt||'';
+      }
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  tbl.appendChild(table);
+  el.innerHTML='';
+  el.appendChild(tbl);
+}
+
+function toggleEstimated(id){
+  var item=(budgetData.items||[]).find(function(x){return x.id===id;});
+  if(item){item.estimated=!item.estimated;saveBudget();renderExpenseTable(_expTab);renderExpenseChart(_chartFilter);renderBudget();}
+}
+
 
 function addExpense(){openExpenseModal(null);}
 function editExpense(id){openExpenseModal(id);}
@@ -1685,7 +1795,8 @@ function openExpenseModal(editId){
     +'<div><div class="modal-lbl">付款人（誰實際付錢）</div><select id="exp-paidby" class="sel" style="width:100%">'+payerOpts+'</select></div>'
     +'<div><div class="modal-lbl">負擔人（誰應該出這筆錢）</div><select id="exp-bornby" class="sel" style="width:100%">'+borneOpts+'</select></div>'
     +'</div>'
-    +'<div class="modal-lbl" style="margin-top:.75rem">備注</div><input id="exp-note" class="modal-inp" type="text" placeholder="例：已付訂金，尾款待付" value="'+(existing&&existing.note?existing.note:'')+'">';
+    +'<div class="modal-lbl" style="margin-top:.75rem">備注</div><input id="exp-note" class="modal-inp" type="text" placeholder="例：已付訂金，尾款待付" value="'+(existing&&existing.note?existing.note:'')+'">'
+    +'<div style="margin-top:.875rem;display:flex;align-items:center;gap:10px"><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="exp-estimated" '+(existing&&existing.estimated?'checked':'')+' style="width:16px;height:16px;cursor:pointer"> <span>這是<b>預估</b>費用（尚未確認）</span></label></div>';
 
   var ft=document.createElement('div');ft.className='modal-ft';
   var bc=document.createElement('button');bc.className='btn btn-out';bc.textContent='取消';bc.onclick=function(){m.remove();};
@@ -1707,7 +1818,8 @@ function openExpenseModal(editId){
       paidBy:(document.getElementById('exp-paidby')||{value:'Shelly'}).value,
       bornBy:(document.getElementById('exp-bornby')||{value:'共同'}).value,
       note:(document.getElementById('exp-note')||{value:''}).value.trim(),
-      paid:true
+      paid:true,
+      estimated:!!(document.getElementById('exp-estimated')&&document.getElementById('exp-estimated').checked)
     };
     if(!budgetData.items)budgetData.items=[];
     if(editId){var idx2=budgetData.items.findIndex(function(x){return x.id===editId;});if(idx2>=0)budgetData.items[idx2]=item;}
@@ -1746,24 +1858,40 @@ function compressData(obj){
 }
 
 function gatherAllData(){
-  // Deep compress - remove all empty/default values
-  function deepCompress(obj){
-    if(Array.isArray(obj))return obj.map(deepCompress).filter(function(x){return x!==null&&x!==undefined;});
+  function compress(obj){
+    if(Array.isArray(obj))return obj.map(compress);
     if(obj&&typeof obj==='object'){
       var out={};
       Object.keys(obj).forEach(function(k){
         var v=obj[k];
         if(v===null||v===undefined||v===''||v===false)return;
         if(Array.isArray(v)&&v.length===0)return;
-        if(typeof v==='number'&&v===0&&k==='stars')return;
-        out[k]=deepCompress(v);
+        out[k]=compress(v);
       });
       return out;
     }
     return obj;
   }
-  return JSON.stringify(deepCompress({
-    v:3,d:data,g:gd,h:snapHistory,cal:calEvents,
+  // Strip pkg from non-key vendors to reduce size (pkg is in HTML defaults anyway)
+  function stripPkg(arr){
+    return (arr||[]).map(function(item){
+      var out=compress(item);
+      // Only keep pkg if user has signed or if it was manually modified
+      if(out.status!=='signed'&&out.status!=='visited'){delete out.pkg;}
+      return out;
+    });
+  }
+  var d2={
+    venues:stripPkg(data.venues),
+    bridals:stripPkg(data.bridals),
+    planners:stripPkg(data.planners),
+    videos:stripPkg(data.videos),
+    photos:stripPkg(data.photos),
+    muas:stripPkg(data.muas),
+    decos:stripPkg(data.decos)
+  };
+  return JSON.stringify(compress({
+    v:3,d:d2,g:gd,h:snapHistory,cal:calEvents,
     gantt:ganttData,lucky:savedDays,ideas:ideas,
     budget:budgetData,todos:todosData,notes:homeNotes
   }));
